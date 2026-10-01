@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class User extends Authenticatable
 {
@@ -14,7 +13,7 @@ class User extends Authenticatable
 
     protected $primaryKey = 'id_user';
 
-    public $timestamps = true;
+    public $timestamps = false;
 
     protected $fillable = [
         'code_connexion',
@@ -27,21 +26,8 @@ class User extends Authenticatable
         'mot_de_passe',
     ];
 
-    protected $casts = [
-        'mot_de_passe' => 'hashed',
-    ];
-
-    public function membre(): BelongsTo
+    public function membre()
     {
-        return $this->belongsTo(
-            Membre::class,
-            'id_memb',
-            'id_memb'
-        );
-    }
-
-    public function getAuthPassword()
-    {
-        return $this->mot_de_passe;
+        return $this->belongsTo(Membre::class, 'id_memb', 'id_memb');
     }
 }

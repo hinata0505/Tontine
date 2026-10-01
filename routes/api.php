@@ -4,7 +4,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\MembreController;
 use App\Http\Controllers\Api\CotisationController;
 use App\Http\Controllers\Api\DistributionController;
+use App\Http\Controllers\Api\AuthController;
 
 Route::apiResource('membres', MembreController::class);
 Route::apiResource('cotisations', CotisationController::class);
 Route::apiResource('distributions', DistributionController::class);
+Route::post('/login', [AuthController::class, 'login']);
