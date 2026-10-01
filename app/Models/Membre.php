@@ -3,17 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Membre extends Model
 {
-    protected $table = 'membres';
-
+    // Indiquer à Laravel le nom exact de la clé primaire
     protected $primaryKey = 'id_memb';
 
-    public $timestamps = false;
-
+    // Autoriser le Mass Assignment pour la méthode create()
     protected $fillable = [
         'nom_memb',
         'telephone',
@@ -22,31 +18,8 @@ class Membre extends Model
         'montant_cotisation',
     ];
 
-    protected $casts = [
-        'montant_cotisation' => 'decimal:2',
-        'ordre_tour' => 'integer',
-    ];
-
-    public function user(): HasOne
+    public function user()
     {
-        return $this->hasOne(User::class, 'id_memb', 'id_memb');
-    }
-
-    public function cotisations(): HasMany
-    {
-        return $this->hasMany(
-            Cotisation::class,
-            'id_memb',
-            'id_memb'
-        );
-    }
-
-    public function distributions(): HasMany
-    {
-        return $this->hasMany(
-            Distribution::class,
-            'id_memb',
-            'id_memb'
-        );
+        return $this->belongsTo(User::class, 'user_id');
     }
 }

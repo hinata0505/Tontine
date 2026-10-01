@@ -2,48 +2,78 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\Cotisation;
 use App\Http\Controllers\Controller;
+use App\Models\Membre;
 use Illuminate\Http\Request;
 
 class CotisationController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Liste des cotisations
      */
     public function index()
     {
-        //
+        $cotisations = Cotisation::with('membre')
+            ->orderByDesc('date_versement')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $cotisations
+        ]);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Enregistrer un paiement
      */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'id_memb' => 'required|exists:membres,id_memb',
+            'mois' => 'required|date',
+            'montant' => 'required|numeric|min:0.01',
+        ]);
+
+        $cotisation = Cotisation::create($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Cotisation enregistrée avec succès.',
+            'data' => $cotisation->load('membre')
+        ], 201);
     }
 
     /**
-     * Display the specified resource.
+     * Cotisations d'un membre
      */
-    public function show(string $id)
+    public function membre($id)
     {
-        //
-    }
+        $membre = Membre::find($id);
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
+        if (!$membre) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Membre introuvable.'
+            ], 404);
+        }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        $cotisations = Cotisation::where('id_memb', $id)
+            ->orderByDesc('date_versement')
+            ->get();
+
+        $totalPaye = $cotisations->sum('montant');
+
+        return response()->json([
+            'success' => true,
+            'membre' => $membre,
+            'cotisations' => $cotisations,
+            'total_paye' => $totalPaye,
+            'montant_attendu' => $membre->montant_cotisation,
+            'reste' => max(
+                0,
+                $membre->montant_cotisation - $totalPaye
+            )
+        ]);
     }
 }

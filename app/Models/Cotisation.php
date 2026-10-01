@@ -23,7 +23,7 @@ class Cotisation extends Model
     protected $casts = [
         'mois' => 'date',
         'date_versement' => 'datetime',
-        'montant' => 'decimal:2',
+        'montant' => 'decimal:10,2',
     ];
 
     public function membre(): BelongsTo
