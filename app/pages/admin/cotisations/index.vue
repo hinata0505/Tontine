@@ -1,40 +1,26 @@
 <script setup lang="ts">
+const api = useApi()
+
 const menuOuvert = ref(false)
 const afficherFormulaire = ref(false)
 const erreur = ref('')
+const message = ref('')
+const chargement = ref(false)
 
-const membres = ref([
-  {
-    id: 1,
-    nom: 'Administrateur',
-    frequence: 'mois',
-    montantAttendu: 30000,
-    montantPaye: 30000
-  },
-  {
-    id: 2,
-    nom: 'Jean',
-    frequence: 'mois',
-    montantAttendu: 30000,
-    montantPaye: 15000
-  },
-  {
-    id: 3,
-    nom: 'Marie',
-    frequence: 'mois',
-    montantAttendu: 30000,
-    montantPaye: 0
-  }
-])
+const membres = ref<any[]>([])
+const cotisations = ref<any[]>([])
+
+const dateActuelle = new Date()
+const cycleActuel = `${dateActuelle.getFullYear()}-${String(dateActuelle.getMonth() + 1).padStart(2, '0')}-01`
 
 const nouveauPaiement = ref({
-  membreId: '',
+  id_memb: '',
   montant: ''
 })
 
 const membreSelectionne = computed(() => {
   return membres.value.find(
-    membre => membre.id === Number(nouveauPaiement.value.membreId)
+    membre => Number(membre.id_memb) === Number(nouveauPaiement.value.membreId)
   )
 })
 
@@ -58,8 +44,47 @@ const membresPayes = computed(() => {
   ).length
 })
 
-const enregistrerPaiement = () => {
+const chargerDonnees = async () => {
+  chargement.value = true
   erreur.value = ''
+
+  try {
+    const [reponseMembres, reponseCotisations] = await Promise.all([
+      api('/membres'),
+      api('/cotisations')
+    ])
+
+    const listeMembres = reponseMembres.data || []
+    cotisations.value = reponseCotisations.data || []
+
+    const cotisationsDuCycle = cotisations.value.filter((cotisation: any) => {
+      return String(cotisation.mois).slice(0, 7) === cycleActuel.slice(0, 7)
+    })
+
+    membres.value = listeMembres.map((membre: any) => {
+      const montantPaye = cotisationsDuCycle
+        .filter((cotisation: any) => Number(cotisation.id_memb) === Number(membre.id_memb))
+        .reduce((total: number, cotisation: any) => total + Number(cotisation.montant), 0)
+
+      return {
+        id: membre.id_memb,
+        nom: membre.nom_memb,
+        frequence: membre.frequence_cotisation,
+        montantAttendu: Number(membre.montant_cotisation),
+        montantPaye
+      }
+    })
+  } catch (error: any) {
+    console.error('Erreur de chargement :', error)
+    erreur.value = error?.data?.message || 'Impossible de charger les cotisations.'
+  } finally {
+    chargement.value = false
+  }
+}
+
+const enregistrerPaiement = async () => {
+  erreur.value = ''
+  message.value = ''
 
   if (!nouveauPaiement.value.membreId || !nouveauPaiement.value.montant) {
     erreur.value = 'Veuillez sélectionner un membre et saisir un montant.'
@@ -68,7 +93,7 @@ const enregistrerPaiement = () => {
 
   const montant = Number(nouveauPaiement.value.montant)
 
-  if (montant <= 0) {
+  if (!Number.isFinite(montant) || montant <= 0) {
     erreur.value = 'Le montant doit être supérieur à 0.'
     return
   }
@@ -78,20 +103,39 @@ const enregistrerPaiement = () => {
     return
   }
 
-  membreSelectionne.value.montantPaye += montant
+  chargement.value = true
 
-  nouveauPaiement.value = {
-    membreId: '',
-    montant: ''
+  try {
+    await api('/cotisations', {
+      method: 'POST',
+      body: {
+        id_memb: membreSelectionne.value.id,
+        mois: cycleActuel,
+        montant
+      }
+    })
+
+    afficherFormulaire.value = false
+    nouveauPaiement.value = {
+      membreId: '',
+      montant: ''
+    }
+
+    message.value = 'Paiement enregistré avec succès.'
+    await chargerDonnees()
+  } catch (error: any) {
+    console.error('Erreur d’enregistrement :', error)
+    erreur.value = error?.data?.message || 'Échec de l’enregistrement du paiement.'
+  } finally {
+    chargement.value = false
   }
-
-  afficherFormulaire.value = false
 }
 
-const ouvrirFormulaire = () => {
+const ouvrirFormulaire = (idMembre?: number) => {
   erreur.value = ''
+  message.value = ''
   nouveauPaiement.value = {
-    membreId: '',
+    id_memb: idMembre ? String(idMembre) : '',
     montant: ''
   }
   afficherFormulaire.value = true
@@ -120,7 +164,13 @@ const obtenirEtat = (membre: {
 
   return 'Non payé'
 }
+
+onMounted(() => {
+  chargerDonnees()
+})
 </script>
+
+
 
 <template>
   <div class="min-h-screen bg-gray-50">
@@ -187,6 +237,27 @@ const obtenirEtat = (membre: {
           </div>
 
         </section>
+
+        <div
+          v-if="erreur"
+          class="mb-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          {{ erreur }}
+        </div>
+
+        <div
+          v-if="message"
+          class="mb-5 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700"
+        >
+          {{ message }}
+        </div>
+
+        <div
+          v-if="chargement && membres.length === 0"
+          class="mb-5 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700"
+        >
+          Chargement des membres et des cotisations...
+        </div>
 
         <!-- Résumé -->
         <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -298,6 +369,12 @@ const obtenirEtat = (membre: {
 
               <tbody class="divide-y divide-gray-100">
 
+                <tr v-if="!chargement && membres.length === 0">
+                  <td colspan="7" class="px-5 py-8 text-center text-gray-500">
+                    Aucun membre enregistré pour le moment.
+                  </td>
+                </tr>
+
                 <tr
                   v-for="membre in membres"
                   :key="membre.id"
@@ -362,10 +439,7 @@ const obtenirEtat = (membre: {
                     <button
                       type="button"
                       class="text-sm font-medium text-green-700 hover:text-green-900"
-                      @click="
-                        nouveauPaiement.membreId = String(membre.id);
-                        afficherFormulaire = true
-                      "
+                      @click="ouvrirFormulaire(membre.id)"
                     >
                       Ajouter
                     </button>
@@ -469,10 +543,7 @@ const obtenirEtat = (membre: {
               <button
                 type="button"
                 class="mt-4 w-full rounded-lg border border-green-700 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-700 hover:text-white"
-                @click="
-                  nouveauPaiement.membreId = String(membre.id);
-                  afficherFormulaire = true
-                "
+                @click="ouvrirFormulaire(membre.id)"
               >
                 Ajouter un paiement
               </button>
@@ -536,24 +607,22 @@ const obtenirEtat = (membre: {
               Membre
             </label>
 
-            <select
-              v-model="nouveauPaiement.membreId"
-              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
-            >
 
-              <option value="">
-                Sélectionner un membre
-              </option>
 
-              <option
-                v-for="membre in membres"
-                :key="membre.id"
-                :value="membre.id"
-              >
-                {{ membre.nom }}
-              </option>
+<select
+  v-model="nouveauPaiement.id_memb"
+  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
+>
+  <option value="">Choisir un membre</option>
 
-            </select>
+  <option
+    v-for="membre in membres"
+    :key="membre.id_memb"
+    :value="String(membre.id_memb)"
+  >
+    {{ membre.nom }} 
+  </option>
+</select>
           </div>
 
           <!-- Montant -->
@@ -614,9 +683,10 @@ const obtenirEtat = (membre: {
 
             <button
               type="submit"
-              class="rounded-lg bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
+              class="rounded-lg bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="chargement || membres.length === 0"
             >
-              Enregistrer
+              {{ chargement ? 'Enregistrement...' : 'Enregistrer' }}
             </button>
 
           </div>

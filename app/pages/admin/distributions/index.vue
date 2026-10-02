@@ -1,34 +1,31 @@
 <script setup lang="ts">
+const api = useApi()
+
 const menuOuvert = ref(false)
-
-const membres = ref([
-  {
-    id: 1,
-    nom: 'Administrateur',
-    ordre: 1,
-    montantAttendu: 30000,
-    montantPaye: 30000
-  },
-  {
-    id: 2,
-    nom: 'Jean',
-    ordre: 2,
-    montantAttendu: 30000,
-    montantPaye: 30000
-  },
-  {
-    id: 3,
-    nom: 'Marie',
-    ordre: 3,
-    montantAttendu: 30000,
-    montantPaye: 15000
-  }
-])
-
+const membres = ref<any[]>([])
+const distributions = ref<any[]>([])
+const cotisations = ref<any[]>([])
 const distributionEffectuee = ref(false)
 const afficherConfirmation = ref(false)
+const chargement = ref(false)
+const erreur = ref('')
+const message = ref('')
+
+const dateCycle = new Date()
+const cycleActuel = `${dateCycle.getFullYear()}-${String(dateCycle.getMonth() + 1).padStart(2, '0')}-01`
+
+const nomCycle = computed(() => {
+  return new Date(`${cycleActuel}T00:00:00`).toLocaleDateString('fr-FR', {
+    month: 'long',
+    year: 'numeric'
+  })
+})
 
 const totalMembres = computed(() => membres.value.length)
+
+const totalCollecte = computed(() => {
+  return membres.value.reduce((total, membre) => total + membre.montantPaye, 0)
+})
 
 const membresAyantPaye = computed(() => {
   return membres.value.filter(
@@ -36,38 +33,121 @@ const membresAyantPaye = computed(() => {
   ).length
 })
 
-const totalCollecte = computed(() => {
-  return membres.value.reduce(
-    (total, membre) => total + membre.montantPaye,
-    0
-  )
-})
-
 const tousOntPaye = computed(() => {
-  return membres.value.every(
+  return membres.value.length > 0 && membres.value.every(
     membre => membre.montantPaye >= membre.montantAttendu
   )
 })
 
-const prochainBeneficiaire = computed(() => {
-  return [...membres.value]
-    .sort((a, b) => a.ordre - b.ordre)
-    .find(membre => !distributionEffectuee.value)
+const distributionsTriees = computed(() => {
+  return [...distributions.value].sort((a, b) => {
+    return new Date(a.mois).getTime() - new Date(b.mois).getTime()
+  })
 })
 
+const prochainBeneficiaire = computed(() => {
+  if (membres.value.length === 0) return null
+
+  const membresTries = [...membres.value].sort((a, b) => a.ordre - b.ordre)
+  const nombreDistributions = distributionsTriees.value.length
+  return membresTries[nombreDistributions % membresTries.length]
+})
+
+const chargerDonnees = async () => {
+  chargement.value = true
+  erreur.value = ''
+
+  try {
+    const [reponseMembres, reponseCotisations, reponseDistributions] = await Promise.all([
+      api('/membres'),
+      api('/cotisations'),
+      api('/distributions')
+    ])
+
+    const listeMembres = reponseMembres.data || []
+    cotisations.value = reponseCotisations.data || []
+    distributions.value = reponseDistributions.data || []
+
+    const cotisationsDuCycle = cotisations.value.filter((cotisation: any) => {
+      return String(cotisation.mois).slice(0, 7) === cycleActuel.slice(0, 7)
+    })
+
+    membres.value = listeMembres.map((membre: any) => {
+      const montantPaye = cotisationsDuCycle
+        .filter((cotisation: any) => Number(cotisation.id_memb) === Number(membre.id_memb))
+        .reduce((total: number, cotisation: any) => total + Number(cotisation.montant), 0)
+
+      return {
+        id: membre.id_memb,
+        nom: membre.nom_memb,
+        ordre: Number(membre.ordre_tour),
+        montantAttendu: Number(membre.montant_cotisation),
+        montantPaye
+      }
+    })
+
+    distributionEffectuee.value = distributions.value.some((distribution: any) => {
+      return String(distribution.mois).slice(0, 7) === cycleActuel.slice(0, 7)
+    })
+  } catch (error: any) {
+    console.error('Erreur de chargement :', error)
+    erreur.value = error?.data?.message || 'Impossible de charger les données.'
+  } finally {
+    chargement.value = false
+  }
+}
+
 const effectuerDistribution = () => {
+  message.value = ''
+  erreur.value = ''
+
   if (!tousOntPaye.value) {
+    erreur.value = 'Tous les membres doivent avoir payé avant la distribution.'
+    return
+  }
+
+  if (!prochainBeneficiaire.value) {
+    erreur.value = 'Aucun bénéficiaire disponible.'
     return
   }
 
   afficherConfirmation.value = true
 }
 
-const confirmerDistribution = () => {
-  distributionEffectuee.value = true
-  afficherConfirmation.value = false
+const confirmerDistribution = async () => {
+  if (!prochainBeneficiaire.value) return
+
+  chargement.value = true
+  erreur.value = ''
+  message.value = ''
+
+  try {
+    await api('/distributions', {
+      method: 'POST',
+      body: {
+        mois: cycleActuel,
+        montant_remis: totalCollecte.value,
+        date_distribution: new Date().toISOString().slice(0, 19).replace('T', ' '),
+        id_memb: prochainBeneficiaire.value.id
+      }
+    })
+
+    afficherConfirmation.value = false
+    message.value = 'Distribution enregistrée avec succès.'
+    await chargerDonnees()
+  } catch (error: any) {
+    console.error('Erreur de distribution :', error)
+    erreur.value = error?.data?.message || 'Échec de l’enregistrement de la distribution.'
+  } finally {
+    chargement.value = false
+  }
 }
+
+onMounted(() => {
+  chargerDonnees()
+})
 </script>
+
 
 <template>
   <div class="min-h-screen bg-gray-50">

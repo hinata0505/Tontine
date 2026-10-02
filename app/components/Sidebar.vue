@@ -33,7 +33,7 @@ const seDeconnecter = async () => {
         class="flex h-10 w-10 items-center justify-center rounded-lg bg-green-700"
       >
         <span class="text-lg font-bold text-white">
-          T
+          Y
         </span>
       </div>
 

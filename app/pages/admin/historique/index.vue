@@ -1,24 +1,10 @@
 <script setup lang="ts">
-const menuOuvert = ref(false)
+const api = useApi()
 
-const distributions = ref([
-  {
-    id: 1,
-    mois: 'Août 2026',
-    beneficiaire: 'Administrateur',
-    ordre: 1,
-    montant: 90000,
-    date: '31/08/2026'
-  },
-  {
-    id: 2,
-    mois: 'Juillet 2026',
-    beneficiaire: 'Jean',
-    ordre: 2,
-    montant: 90000,
-    date: '31/07/2026'
-  }
-])
+const menuOuvert = ref(false)
+const distributions = ref<any[]>([])
+const chargement = ref(false)
+const erreur = ref('')
 
 const totalDistributions = computed(() => {
   return distributions.value.length
@@ -26,11 +12,73 @@ const totalDistributions = computed(() => {
 
 const montantTotal = computed(() => {
   return distributions.value.reduce(
-    (total, distribution) => total + distribution.montant,
+    (total, distribution) => total + Number(distribution.montant),
     0
   )
 })
+
+const formaterMois = (mois: string) => {
+  if (!mois) return ''
+
+  const date = new Date(`${String(mois).slice(0, 10)}T00:00:00`)
+
+  return date.toLocaleDateString('fr-FR', {
+    month: 'long',
+    year: 'numeric'
+  })
+}
+
+const formaterDate = (date: string) => {
+  if (!date) return ''
+
+  const valeur = String(date).replace(' ', 'T').slice(0, 10)
+  const [annee, mois, jour] = valeur.split('-')
+
+  return `${jour}/${mois}/${annee}`
+}
+
+const chargerHistorique = async () => {
+  chargement.value = true
+  erreur.value = ''
+
+  try {
+    const [reponseDistributions, reponseMembres] = await Promise.all([
+      api('/distributions'),
+      api('/membres')
+    ])
+
+    const listeDistributions = reponseDistributions.data || []
+    const listeMembres = reponseMembres.data || []
+
+    distributions.value = listeDistributions.map((distribution: any) => {
+      const membre = listeMembres.find(
+        (item: any) => Number(item.id_memb) === Number(distribution.id_memb)
+      )
+
+      return {
+        id: distribution.id_distrib,
+        mois: formaterMois(distribution.mois),
+        beneficiaire: membre ? membre.nom_memb : 'Membre introuvable',
+        ordre: membre ? Number(membre.ordre_tour) : '-',
+        montant: Number(distribution.montant_remis),
+        date: formaterDate(distribution.date_distribution)
+      }
+    }).sort((a: any, b: any) => {
+      return b.id - a.id
+    })
+  } catch (error: any) {
+    console.error('Erreur de chargement de l’historique :', error)
+    erreur.value = error?.data?.message || 'Impossible de charger l’historique.'
+  } finally {
+    chargement.value = false
+  }
+}
+
+onMounted(() => {
+  chargerHistorique()
+})
 </script>
+
 
 <template>
   <div class="min-h-screen bg-gray-50">

@@ -1,18 +1,10 @@
 <script setup lang="ts">
+
 const menuOuvert = ref(false)
 
 const afficherFormulaire = ref(false)
 
-const membres = ref([
-  {
-    id: 1,
-    nom: 'Administrateur',
-    telephone: '90 00 00 00',
-    ordre: 1,
-    frequence: 'mois',
-    montant: 30000
-  }
-])
+const membres = ref<any[]>([])
 
 const nouveauMembre = ref({
   nom: '',
@@ -23,8 +15,46 @@ const nouveauMembre = ref({
 })
 
 const erreur = ref('')
+const chargement = ref(false)
 
-const ajouterMembre = () => {
+// ========================================
+// CHARGER LES MEMBRES DEPUIS LARAVEL
+// ========================================
+const chargerMembres = async () => {
+  try {
+    const response: any = await $fetch(
+      'http://127.0.0.1:8000/api/membres',
+      {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    )
+
+    if (response.success) {
+      membres.value = response.data.map((membre: any) => ({
+        id: membre.id_memb,
+        nom: membre.nom_memb,
+        telephone: membre.telephone,
+        ordre: membre.ordre_tour,
+        frequence: membre.frequence_cotisation,
+        montant: Number(membre.montant_cotisation)
+      }))
+    }
+
+  } catch (error) {
+    console.error('Erreur chargement membres :', error)
+    erreur.value = 'Impossible de charger les membres.'
+  }
+}
+
+
+// ========================================
+// AJOUTER UN MEMBRE
+// ========================================
+const ajouterMembre = async () => {
+
   erreur.value = ''
 
   if (
@@ -37,45 +67,123 @@ const ajouterMembre = () => {
     return
   }
 
-  const ordreExiste = membres.value.some(
-    membre => membre.ordre === Number(nouveauMembre.value.ordre)
-  )
+  chargement.value = true
 
-  if (ordreExiste) {
-    erreur.value = 'Cet ordre de tour est déjà utilisé.'
+  try {
+
+    const response: any = await $fetch(
+      'http://127.0.0.1:8000/api/membres',
+      {
+        method: 'POST',
+
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+
+        body: {
+          nom_memb: nouveauMembre.value.nom,
+          telephone: nouveauMembre.value.telephone,
+          ordre_tour: Number(nouveauMembre.value.ordre),
+          frequence_cotisation: nouveauMembre.value.frequence,
+          montant_cotisation: Number(nouveauMembre.value.montant)
+        }
+      }
+    )
+
+    console.log('Membre enregistré :', response)
+
+    if (response.success) {
+
+      // Recharger la liste depuis la base
+      await chargerMembres()
+
+      // Réinitialiser le formulaire
+      nouveauMembre.value = {
+        nom: '',
+        telephone: '',
+        ordre: '',
+        frequence: 'mois',
+        montant: ''
+      }
+
+      afficherFormulaire.value = false
+    }
+
+  } catch (error: any) {
+  console.error('Erreur ajout membre :', error)
+
+  const responseData = error?.response?._data || error?.data
+
+  if (responseData?.errors) {
+    // Affiche la liste des erreurs de validation (ex: "L'ordre de tour a déjà été pris.")
+    erreur.value = Object.values(responseData.errors).flat().join(' ')
+  } else if (responseData?.message) {
+    erreur.value = responseData.message
+  } else {
+    erreur.value = 'Impossible d’enregistrer le membre.'
+  }
+} finally {
+    chargement.value = false
+  }
+}
+
+
+// ========================================
+// SUPPRIMER UN MEMBRE
+// ========================================
+const supprimerMembre = async (id: number) => {
+
+  if (!confirm('Voulez-vous vraiment supprimer ce membre ?')) {
     return
   }
 
-  membres.value.push({
-    id: membres.value.length + 1,
-    nom: nouveauMembre.value.nom,
-    telephone: nouveauMembre.value.telephone,
-    ordre: Number(nouveauMembre.value.ordre),
-    frequence: nouveauMembre.value.frequence,
-    montant: Number(nouveauMembre.value.montant)
-  })
+  try {
 
-  nouveauMembre.value = {
-    nom: '',
-    telephone: '',
-    ordre: '',
-    frequence: 'mois',
-    montant: ''
+    await $fetch(
+      `http://127.0.0.1:8000/api/membres/${id}`,
+      {
+        method: 'DELETE',
+
+        headers: {
+          Accept: 'application/json'
+        }
+      }
+    )
+
+    // Recharger depuis la base
+    await chargerMembres()
+
+  } catch (error: any) {
+
+    console.error('Erreur suppression :', error)
+
+    if (error?.data?.message) {
+      erreur.value = error.data.message
+    } else {
+      erreur.value = 'Impossible de supprimer le membre.'
+    }
   }
-
-  afficherFormulaire.value = false
 }
 
-const supprimerMembre = (id: number) => {
-  membres.value = membres.value.filter(membre => membre.id !== id)
-}
 
+// ========================================
+// FERMER LE FORMULAIRE
+// ========================================
 const fermerFormulaire = () => {
   afficherFormulaire.value = false
   erreur.value = ''
 }
-</script>
 
+
+// ========================================
+// CHARGEMENT INITIAL
+// ========================================
+onMounted(() => {
+  chargerMembres()
+})
+
+</script>
 <template>
   <div class="min-h-screen bg-gray-50">
 
